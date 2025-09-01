@@ -1,0 +1,32 @@
+From 8264a0639abc300924a13b4741fc0cb51e7abbd5 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Tue, 20 May 2025 15:15:09 +0800
+Subject: [PATCH 07/43] riscv: config: enable dma driver for spacemit k1
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/25
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/8e56c6e0c36c7ba6f66274e73aeb8b2095b42600
+
+--------------------------------
+
+Add dma driver with built-in mode
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/configs/k1_defconfig | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/riscv/configs/k1_defconfig b/arch/riscv/configs/k1_defconfig
+index 32e42ff1ecf0d..a0c69c4da2f74 100644
+--- a/arch/riscv/configs/k1_defconfig
++++ b/arch/riscv/configs/k1_defconfig
+@@ -12,3 +12,5 @@ CONFIG_SERIAL_SPACEMIT_K1X=y
+ CONFIG_SERIAL_SPACEMIT_K1X_CONSOLE=y
+ CONFIG_SERIAL_DEV_BUS=y
+ CONFIG_SPACEMIT_MEM_RANGE=y
++CONFIG_SPACEMIT_K1_DMA=y
++
+-- 
+2.51.0
+

@@ -1,0 +1,808 @@
+From 0559350efcb45c79fef7a2b91c6a2b962fae0ac9 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Mon, 19 May 2025 19:29:18 +0800
+Subject: [PATCH 24/43] driver: mfd: add spacemit p1 mfd driver support
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/27
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/85f7aea27516e3b73527247ce42947b53ce001dd
+
+--------------------------------
+
+The Spacemit P1 is a multi-function power supply chip.
+It integrates multiple functions such as regulator, RTC,
+ADC, GPIO for example.
+It support 2.7v~5.5v voltage input, contain 6 DCDCs and
+12 LDOs for power supply, contain 8 channel 12bits ADC,
+and 6 GPIOs.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ drivers/mfd/Kconfig             |  12 +
+ drivers/mfd/Makefile            |   2 +
+ drivers/mfd/spacemit-p1.c       | 481 ++++++++++++++++++++++++++++++++
+ include/linux/mfd/spacemit_p1.h | 250 +++++++++++++++++
+ 4 files changed, 745 insertions(+)
+ create mode 100644 drivers/mfd/spacemit-p1.c
+ create mode 100644 include/linux/mfd/spacemit_p1.h
+
+diff --git a/drivers/mfd/Kconfig b/drivers/mfd/Kconfig
+index 68d71b4b55bd3..77a4f8fd3f4a8 100644
+--- a/drivers/mfd/Kconfig
++++ b/drivers/mfd/Kconfig
+@@ -2218,6 +2218,18 @@ config MFD_QCOM_PM8008
+ 	  under it in the device tree. Additional drivers must be enabled in
+ 	  order to use the functionality of the device.
+ 
++config MFD_SPACEMIT_P1
++	tristate "Spacemit P1 Power Management IC"
++	depends on I2C && OF
++	select MFD_CORE
++	select REGMAP_I2C
++	select REGMAP_IRQ
++	help
++	  Select this option to get support for the Spacemit P1 Power Management IC.
++	  P1 is a dedicated PMIC that integrates voltage supply, gpio, rtc and adc
++	  functions in to a single chip. This driver provides common support for
++	  accessing the device.
++
+ menu "Multimedia Capabilities Port drivers"
+ 	depends on ARCH_SA1100
+ 
+diff --git a/drivers/mfd/Makefile b/drivers/mfd/Makefile
+index db1ba39de3b59..eb3c4eeef7579 100644
+--- a/drivers/mfd/Makefile
++++ b/drivers/mfd/Makefile
+@@ -282,3 +282,5 @@ obj-$(CONFIG_MFD_ATC260X_I2C)	+= atc260x-i2c.o
+ 
+ obj-$(CONFIG_MFD_RSMU_I2C)	+= rsmu_i2c.o rsmu_core.o
+ obj-$(CONFIG_MFD_RSMU_SPI)	+= rsmu_spi.o rsmu_core.o
++
++obj-$(CONFIG_MFD_SPACEMIT_P1) += spacemit-p1.o
+diff --git a/drivers/mfd/spacemit-p1.c b/drivers/mfd/spacemit-p1.c
+new file mode 100644
+index 0000000000000..7be10d024c1f3
+--- /dev/null
++++ b/drivers/mfd/spacemit-p1.c
+@@ -0,0 +1,481 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * mfd driver for Spacemit P1
++ *
++ * Copyright (c) 2023, Spacemit Co., Ltd
++ */
++
++#include <linux/i2c.h>
++#include <linux/interrupt.h>
++#include <linux/mfd/core.h>
++#include <linux/module.h>
++#include <linux/of_device.h>
++#include <linux/regmap.h>
++#include <linux/reboot.h>
++#include <linux/ioport.h>
++#include <linux/pm_wakeirq.h>
++#include <linux/mfd/spacemit_p1.h>
++
++struct mfd_match_data {
++	const struct regmap_config *regmap_cfg;
++	const struct regmap_irq_chip *regmap_irq_chip;
++	const struct mfd_cell *mfd_cells;
++	int nr_cells;
++	const char *name;
++	void *ptr;
++
++	/* shutdown - reboot support */
++	struct {
++		unsigned char reg;
++		unsigned char bit;
++	} shutdown;
++
++	struct {
++		unsigned int reg;
++		unsigned char bit;
++	} reboot;
++
++	/* value will be kept in register while reset pmic  */
++	struct {
++		unsigned int reg;
++		unsigned char bit;
++	} non_reset;
++};
++
++static const struct regmap_config spm_p1_regmap_config = {
++	.reg_bits = 8,
++	.val_bits = 8,
++	.max_register = SPM_P1_MAX_REG,
++	.cache_type = REGCACHE_RBTREE,
++};
++
++static const struct regmap_irq spm_p1_irqs[] = {
++	[SPM_P1_E_GPI0] = {
++		.mask = SPM_P1_E_GPI0_MSK,
++		.reg_offset = 0,
++	},
++
++	[SPM_P1_E_GPI1] = {
++		.mask = SPM_P1_E_GPI1_MSK,
++		.reg_offset = 0,
++	},
++
++	[SPM_P1_E_GPI2] = {
++		.mask = SPM_P1_E_GPI2_MSK,
++		.reg_offset = 0,
++	},
++
++	[SPM_P1_E_GPI3] = {
++		.mask = SPM_P1_E_GPI3_MSK,
++		.reg_offset = 0,
++	},
++
++	[SPM_P1_E_GPI4] = {
++		.mask = SPM_P1_E_GPI4_MSK,
++		.reg_offset = 0,
++	},
++
++	[SPM_P1_E_GPI5] = {
++		.mask = SPM_P1_E_GPI5_MSK,
++		.reg_offset = 0,
++	},
++
++	[SPM_P1_E_ADC_TEMP] = {
++		.mask = SPM_P1_E_ADC_TEMP_MSK,
++		.reg_offset = 1,
++	},
++
++	[SPM_P1_E_ADC_EOC] = {
++		.mask = SPM_P1_E_ADC_EOC_MSK,
++		.reg_offset = 1,
++	},
++
++	[SPM_P1_E_ADC_EOS] = {
++		.mask = SPM_P1_E_ADC_EOS_MSK,
++		.reg_offset = 1,
++	},
++
++	[SPM_P1_E_WDT_TO] = {
++		.mask = SPM_P1_E_WDT_TO_MSK,
++		.reg_offset = 1,
++	},
++
++	[SPM_P1_E_ALARM] = {
++		.mask = SPM_P1_E_ALARM_MSK,
++		.reg_offset = 1,
++	},
++
++	[SPM_P1_E_TICK] = {
++		.mask = SPM_P1_E_TICK_MSK,
++		.reg_offset = 1,
++	},
++
++	[SPM_P1_E_LDO_OV] = {
++		.mask = SPM_P1_E_LDO_OV_MSK,
++		.reg_offset = 2,
++	},
++
++	[SPM_P1_E_LDO_UV] = {
++		.mask = SPM_P1_E_LDO_UV_MSK,
++		.reg_offset = 2,
++	},
++
++	[SPM_P1_E_LDO_SC] = {
++		.mask = SPM_P1_E_LDO_SC_MSK,
++		.reg_offset = 2,
++	},
++
++	[SPM_P1_E_SW_SC] = {
++		.mask = SPM_P1_E_SW_SC_MSK,
++		.reg_offset = 2,
++	},
++
++	[SPM_P1_E_TEMP_WARN] = {
++		.mask = SPM_P1_E_TEMP_WARN_MSK,
++		.reg_offset = 2,
++	},
++
++	[SPM_P1_E_TEMP_SEVERE] = {
++		.mask = SPM_P1_E_TEMP_SEVERE_MSK,
++		.reg_offset = 2,
++	},
++
++	[SPM_P1_E_TEMP_CRIT] = {
++		.mask = SPM_P1_E_TEMP_CRIT_MSK,
++		.reg_offset = 2,
++	},
++
++	[SPM_P1_E_BUCK1_OV] = {
++		.mask = SPM_P1_E_BUCK1_OV_MSK,
++		.reg_offset = 3,
++	},
++
++	[SPM_P1_E_BUCK2_OV] = {
++		.mask = SPM_P1_E_BUCK2_OV_MSK,
++		.reg_offset = 3,
++	},
++
++	[SPM_P1_E_BUCK3_OV] = {
++		.mask = SPM_P1_E_BUCK3_OV_MSK,
++		.reg_offset = 3,
++	},
++
++	[SPM_P1_E_BUCK4_OV] = {
++		.mask = SPM_P1_E_BUCK4_OV_MSK,
++		.reg_offset = 3,
++	},
++
++	[SPM_P1_E_BUCK5_OV] = {
++		.mask = SPM_P1_E_BUCK5_OV_MSK,
++		.reg_offset = 3,
++	},
++
++	[SPM_P1_E_BUCK6_OV] = {
++		.mask = SPM_P1_E_BUCK6_OV_MSK,
++		.reg_offset = 3,
++	},
++
++	[SPM_P1_E_BUCK1_UV] = {
++		.mask = SPM_P1_E_BUCK1_UV_MSK,
++		.reg_offset = 4,
++	},
++
++	[SPM_P1_E_BUCK2_UV] = {
++		.mask = SPM_P1_E_BUCK2_UV_MSK,
++		.reg_offset = 4,
++	},
++
++	[SPM_P1_E_BUCK3_UV] = {
++		.mask = SPM_P1_E_BUCK3_UV_MSK,
++		.reg_offset = 4,
++	},
++
++	[SPM_P1_E_BUCK4_UV] = {
++		.mask = SPM_P1_E_BUCK4_UV_MSK,
++		.reg_offset = 4,
++	},
++
++	[SPM_P1_E_BUCK5_UV] = {
++		.mask = SPM_P1_E_BUCK5_UV_MSK,
++		.reg_offset = 4,
++	},
++
++	[SPM_P1_E_BUCK6_UV] = {
++		.mask = SPM_P1_E_BUCK6_UV_MSK,
++		.reg_offset = 4,
++	},
++
++	[SPM_P1_E_BUCK1_SC] = {
++		.mask = SPM_P1_E_BUCK1_SC_MSK,
++		.reg_offset = 5,
++	},
++
++	[SPM_P1_E_BUCK2_SC] = {
++		.mask = SPM_P1_E_BUCK2_SC_MSK,
++		.reg_offset = 5,
++	},
++
++	[SPM_P1_E_BUCK3_SC] = {
++		.mask = SPM_P1_E_BUCK3_SC_MSK,
++		.reg_offset = 5,
++	},
++
++	[SPM_P1_E_BUCK4_SC] = {
++		.mask = SPM_P1_E_BUCK4_SC_MSK,
++		.reg_offset = 5,
++	},
++
++	[SPM_P1_E_BUCK5_SC] = {
++		.mask = SPM_P1_E_BUCK5_SC_MSK,
++		.reg_offset = 5,
++	},
++
++	[SPM_P1_E_BUCK6_SC] = {
++		.mask = SPM_P1_E_BUCK6_SC_MSK,
++		.reg_offset = 5,
++	},
++
++	[SPM_P1_E_PWRON_RINTR] = {
++		.mask = SPM_P1_E_PWRON_RINTR_MSK,
++		.reg_offset = 6,
++	},
++
++	[SPM_P1_E_PWRON_FINTR] = {
++		.mask = SPM_P1_E_PWRON_FINTR_MSK,
++		.reg_offset = 6,
++	},
++
++	[SPM_P1_E_PWRON_SINTR] = {
++		.mask = SPM_P1_E_PWRON_SINTR_MSK,
++		.reg_offset = 6,
++	},
++
++	[SPM_P1_E_PWRON_LINTR] = {
++		.mask = SPM_P1_E_PWRON_LINTR_MSK,
++		.reg_offset = 6,
++	},
++
++	[SPM_P1_E_PWRON_SDINTR] = {
++		.mask = SPM_P1_E_PWRON_SDINTR_MSK,
++		.reg_offset = 6,
++	},
++
++	[SPM_P1_E_VSYS_OV] = {
++		.mask = SPM_P1_E_VSYS_OV_MSK,
++		.reg_offset = 6,
++	},
++};
++
++static const struct regmap_irq_chip spm_p1_irq_chip = {
++	.name = "spm_p1",
++	.irqs = spm_p1_irqs,
++	.num_irqs = ARRAY_SIZE(spm_p1_irqs),
++	.num_regs = 7,
++	.status_base = SPM_P1_E_STATUS_REG_BASE,
++	.mask_base = SPM_P1_E_EN_REG_BASE,
++	.unmask_base = SPM_P1_E_EN_REG_BASE,
++	.ack_base = SPM_P1_E_STATUS_REG_BASE,
++	.init_ack_masked = true,
++	.mask_unmask_non_inverted = true,
++};
++
++/* power-key desc */
++static const struct resource spm_p1_pwrkey_resources[] = {
++	DEFINE_RES_IRQ(SPM_P1_E_PWRON_RINTR),
++	DEFINE_RES_IRQ(SPM_P1_E_PWRON_FINTR),
++	DEFINE_RES_IRQ(SPM_P1_E_PWRON_SINTR),
++	DEFINE_RES_IRQ(SPM_P1_E_PWRON_LINTR),
++};
++
++/* rtc desc */
++static const struct resource spm_p1_rtc_resources[] = {
++	DEFINE_RES_IRQ(SPM_P1_E_ALARM),
++};
++
++/* adc desc */
++static const struct resource spm_p1_adc_resources[] = {
++	DEFINE_RES_IRQ(SPM_P1_E_ADC_EOC),
++};
++
++/* mfd configuration */
++static const struct mfd_cell spm_p1[] = {
++	{
++		.name = "spm-p1-regulator",
++		.of_compatible = "spacemit,p1,regulator",
++	},
++	{
++		.name = "spm-p1-pinctrl",
++		.of_compatible = "spacemit,p1,pinctrl",
++	},
++	{
++		.name = "spm-p1-pwrkey",
++		.of_compatible = "spacemit,p1,pwrkey",
++		.num_resources = ARRAY_SIZE(spm_p1_pwrkey_resources),
++		.resources = &spm_p1_pwrkey_resources[0],
++	},
++	{
++		.name = "spm-p1-rtc",
++		.of_compatible = "spacemit,p1,rtc",
++		.num_resources = ARRAY_SIZE(spm_p1_rtc_resources),
++		.resources = &spm_p1_rtc_resources[0],
++	},
++	{
++		.name = "spm-p1-adc",
++		.of_compatible = "spacemit,p1,adc",
++		.num_resources = ARRAY_SIZE(spm_p1_adc_resources),
++		.resources = &spm_p1_adc_resources[0],
++	},
++};
++
++static struct mfd_match_data spm_p1_mfd_match_data = {
++	.regmap_cfg = &spm_p1_regmap_config,
++	.regmap_irq_chip = &spm_p1_irq_chip,
++	.mfd_cells = spm_p1,
++	.nr_cells = ARRAY_SIZE(spm_p1),
++	.name = "spm_p1",
++	.shutdown = {
++		.reg = SPM_P1_PWR_CTRL2,
++		.bit = SPM_P1_SW_SHUTDOWN_BIT_MSK,
++	},
++	.reboot = {
++		.reg = SPM_P1_PWR_CTRL2,
++		.bit = SPM_P1_SW_RESET_BIT_MSK,
++	},
++	.non_reset = {
++		.reg = SPM_P1_NON_RESET_REG,
++		.bit = SPM_P1_RESTART_CFG_BIT_MSK,
++	},
++};
++
++struct mfd_match_data *match_data;
++
++static void spm_p1_power_off(void)
++{
++	struct spacemit_pmic *pmic = (struct spacemit_pmic *)match_data->ptr;
++
++	regmap_update_bits(pmic->regmap, match_data->shutdown.reg, match_data->shutdown.bit,
++			   match_data->shutdown.bit);
++
++	/* Wait for poweroff */
++	for (;;)
++		cpu_relax();
++}
++
++static int spm_p1_restart_notify(struct notifier_block *this, unsigned long mode, void *cmd)
++{
++	struct spacemit_pmic *pmic = (struct spacemit_pmic *)match_data->ptr;
++
++	regmap_update_bits(pmic->regmap, match_data->reboot.reg, match_data->reboot.bit,
++			   match_data->reboot.bit);
++
++	return NOTIFY_DONE;
++}
++
++static struct notifier_block spm_p1_restart_handler = {
++	.notifier_call = spm_p1_restart_notify,
++	.priority = 0,
++};
++
++static int spm_p1_probe(struct i2c_client *client)
++{
++	int ret;
++	int nr_cells;
++	struct device_node *np;
++	struct spacemit_pmic *pmic;
++	const struct mfd_cell *cells;
++	const struct of_device_id *of_id;
++
++	pmic = devm_kzalloc(&client->dev, sizeof(*pmic), GFP_KERNEL);
++	if (!pmic)
++		return -ENOMEM;
++
++	of_id = of_match_device(client->dev.driver->of_match_table, &client->dev);
++	if (!of_id) {
++		pr_err("Unable to match OF ID\n");
++		return -ENODEV;
++	}
++
++	/* find the property in device node */
++	np = of_find_compatible_node(NULL, NULL, of_id->compatible);
++	if (!np)
++		return 0;
++
++	of_node_put(np);
++
++	match_data = (struct mfd_match_data *)of_id->data;
++	match_data->ptr = (void *)pmic;
++
++	pmic->regmap_cfg = match_data->regmap_cfg;
++	pmic->regmap_irq_chip = match_data->regmap_irq_chip;
++	cells = match_data->mfd_cells;
++	nr_cells = match_data->nr_cells;
++
++	pmic->i2c = client;
++
++	i2c_set_clientdata(client, pmic);
++
++	pmic->regmap = devm_regmap_init_i2c(client, pmic->regmap_cfg);
++	if (IS_ERR(pmic->regmap)) {
++		pr_err("%s:%d, regmap initialization failed\n", __func__, __LINE__);
++		return PTR_ERR(pmic->regmap);
++	}
++
++	regcache_cache_bypass(pmic->regmap, true);
++
++	if (!client->irq)
++		pr_warn("%s:%d, No interrupt supported\n", __func__, __LINE__);
++	else {
++		if (pmic->regmap_irq_chip) {
++			ret = regmap_add_irq_chip(pmic->regmap, client->irq, IRQF_ONESHOT, -1,
++						  pmic->regmap_irq_chip, &pmic->irq_data);
++			if (ret) {
++				pr_err("failed to add irqchip %d\n", ret);
++				return ret;
++			}
++		}
++
++		dev_pm_set_wake_irq(&client->dev, client->irq);
++		device_init_wakeup(&client->dev, true);
++	}
++
++	ret = devm_mfd_add_devices(&client->dev, PLATFORM_DEVID_NONE, cells, nr_cells, NULL, 0,
++				   regmap_irq_get_domain(pmic->irq_data));
++	if (ret) {
++		pr_err("failed to add MFD devices %d\n", ret);
++		return -EINVAL;
++	}
++
++	if (match_data->shutdown.reg)
++		pm_power_off = spm_p1_power_off;
++
++	if (match_data->reboot.reg) {
++		ret = register_restart_handler(&spm_p1_restart_handler);
++		if (ret)
++			pr_warn("failed to register rst handler, %d\n", ret);
++	}
++
++	return 0;
++}
++
++static const struct of_device_id spm_p1_of_match[] = {
++	{ .compatible = "spacemit,p1", .data = (void *)&spm_p1_mfd_match_data },
++	{ },
++};
++MODULE_DEVICE_TABLE(of, spm_p1_of_match);
++
++static struct i2c_driver spm_p1_i2c_driver = {
++	.driver = {
++		.name = "spm-p1",
++		.of_match_table = spm_p1_of_match,
++	},
++	.probe    = spm_p1_probe,
++};
++
++static int spacemit_mfd_init(void)
++{
++	return i2c_add_driver(&spm_p1_i2c_driver);
++}
++subsys_initcall(spacemit_mfd_init);
++
++MODULE_DESCRIPTION("Spacemit P1 mfd driver");
++MODULE_LICENSE("GPL");
+diff --git a/include/linux/mfd/spacemit_p1.h b/include/linux/mfd/spacemit_p1.h
+new file mode 100644
+index 0000000000000..52614b8dca583
+--- /dev/null
++++ b/include/linux/mfd/spacemit_p1.h
+@@ -0,0 +1,250 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++/*
++ * Spacemit P1 multi-function-device interface
++ * Copyright (c) 2023, SPACEMIT Co., Ltd
++ */
++#ifndef __SPACEMIT_P1_H__
++#define __SPACEMIT_P1_H__
++
++#include <linux/regulator/machine.h>
++#include <linux/regmap.h>
++
++enum SPM_P1_reg {
++	SPM_P1_ID_DCDC1,
++	SPM_P1_ID_DCDC2,
++	SPM_P1_ID_DCDC3,
++	SPM_P1_ID_DCDC4,
++	SPM_P1_ID_DCDC5,
++	SPM_P1_ID_DCDC6,
++	SPM_P1_ID_LDO1,
++	SPM_P1_ID_LDO2,
++	SPM_P1_ID_LDO3,
++	SPM_P1_ID_LDO4,
++	SPM_P1_ID_LDO5,
++	SPM_P1_ID_LDO6,
++	SPM_P1_ID_LDO7,
++	SPM_P1_ID_LDO8,
++	SPM_P1_ID_LDO9,
++	SPM_P1_ID_LDO10,
++	SPM_P1_ID_LDO11,
++	SPM_P1_ID_SWITCH1,
++};
++
++/* irq description */
++enum IRQ_line {
++	/* reg: 0x91 */
++	SPM_P1_E_GPI0,
++	SPM_P1_E_GPI1,
++	SPM_P1_E_GPI2,
++	SPM_P1_E_GPI3,
++	SPM_P1_E_GPI4,
++	SPM_P1_E_GPI5,
++
++	/* reg: 0x92 */
++	SPM_P1_E_ADC_TEMP,
++	SPM_P1_E_ADC_EOC,
++	SPM_P1_E_ADC_EOS,
++	SPM_P1_E_WDT_TO,
++	SPM_P1_E_ALARM,
++	SPM_P1_E_TICK,
++
++	/* reg: 0x93 */
++	SPM_P1_E_LDO_OV,
++	SPM_P1_E_LDO_UV,
++	SPM_P1_E_LDO_SC,
++	SPM_P1_E_SW_SC,
++	SPM_P1_E_TEMP_WARN,
++	SPM_P1_E_TEMP_SEVERE,
++	SPM_P1_E_TEMP_CRIT,
++
++	/* reg: 0x94 */
++	SPM_P1_E_BUCK1_OV,
++	SPM_P1_E_BUCK2_OV,
++	SPM_P1_E_BUCK3_OV,
++	SPM_P1_E_BUCK4_OV,
++	SPM_P1_E_BUCK5_OV,
++	SPM_P1_E_BUCK6_OV,
++
++	/* reg: 0x95 */
++	SPM_P1_E_BUCK1_UV,
++	SPM_P1_E_BUCK2_UV,
++	SPM_P1_E_BUCK3_UV,
++	SPM_P1_E_BUCK4_UV,
++	SPM_P1_E_BUCK5_UV,
++	SPM_P1_E_BUCK6_UV,
++
++	/* reg: 0x96 */
++	SPM_P1_E_BUCK1_SC,
++	SPM_P1_E_BUCK2_SC,
++	SPM_P1_E_BUCK3_SC,
++	SPM_P1_E_BUCK4_SC,
++	SPM_P1_E_BUCK5_SC,
++	SPM_P1_E_BUCK6_SC,
++
++	/* reg: 0x97 */
++	SPM_P1_E_PWRON_RINTR,
++	SPM_P1_E_PWRON_FINTR,
++	SPM_P1_E_PWRON_SINTR,
++	SPM_P1_E_PWRON_LINTR,
++	SPM_P1_E_PWRON_SDINTR,
++	SPM_P1_E_VSYS_OV,
++};
++
++#define SPM_P1_MAX_REG			0xB0
++
++#define SPM_P1_VERSION_ID_REG		0xa1
++
++#define SPM_P1_BUCK_VSEL_MASK		0xff
++#define SMP8821_BUCK_EN_MASK		0x1
++
++#define SPM_P1_BUCK1_CTRL_REG		0x47
++#define SPM_P1_BUCK2_CTRL_REG		0x4a
++#define SPM_P1_BUCK3_CTRL_REG		0x4d
++#define SPM_P1_BUCK4_CTRL_REG		0x50
++#define SPM_P1_BUCK5_CTRL_REG		0x53
++#define SPM_P1_BUCK6_CTRL_REG		0x56
++
++#define SPM_P1_BUCK1_VSEL_REG		0x48
++#define SPM_P1_BUCK2_VSEL_REG		0x4b
++#define SPM_P1_BUCK3_VSEL_REG		0x4e
++#define SPM_P1_BUCK4_VSEL_REG		0x51
++#define SPM_P1_BUCK5_VSEL_REG		0x54
++#define SPM_P1_BUCK6_VSEL_REG		0x57
++
++#define SPM_P1_ALDO1_CTRL_REG		0x5b
++#define SPM_P1_ALDO2_CTRL_REG		0x5e
++#define SPM_P1_ALDO3_CTRL_REG		0x61
++#define SPM_P1_ALDO4_CTRL_REG		0x64
++
++#define SPM_P1_ALDO1_VOLT_REG		0x5c
++#define SPM_P1_ALDO2_VOLT_REG		0x5f
++#define SPM_P1_ALDO3_VOLT_REG		0x62
++#define SPM_P1_ALDO4_VOLT_REG		0x65
++
++#define SPM_P1_ALDO_EN_MASK		0x1
++#define SPM_P1_ALDO_VSEL_MASK		0x7f
++
++#define SPM_P1_DLDO1_CTRL_REG		0x67
++#define SPM_P1_DLDO2_CTRL_REG		0x6a
++#define SPM_P1_DLDO3_CTRL_REG		0x6d
++#define SPM_P1_DLDO4_CTRL_REG		0x70
++#define SPM_P1_DLDO5_CTRL_REG		0x73
++#define SPM_P1_DLDO6_CTRL_REG		0x76
++#define SPM_P1_DLDO7_CTRL_REG		0x79
++
++#define SPM_P1_DLDO1_VOLT_REG		0x68
++#define SPM_P1_DLDO2_VOLT_REG		0x6b
++#define SPM_P1_DLDO3_VOLT_REG		0x6e
++#define SPM_P1_DLDO4_VOLT_REG		0x71
++#define SPM_P1_DLDO5_VOLT_REG		0x74
++#define SPM_P1_DLDO6_VOLT_REG		0x77
++#define SPM_P1_DLDO7_VOLT_REG		0x7a
++
++#define SPM_P1_DLDO_EN_MASK		0x1
++#define SPM_P1_DLDO_VSEL_MASK		0x7f
++
++#define SPM_P1_SWITCH_CTRL_REG		0x59
++#define SPM_P1_SWTICH_EN_MASK		0x1
++
++#define SPM_P1_PWR_CTRL2		0x7e
++#define SPM_P1_SW_SHUTDOWN_BIT_MSK	0x4
++#define SPM_P1_SW_RESET_BIT_MSK	0x2
++
++#define SPM_P1_NON_RESET_REG		0xAB
++#define SPM_P1_RESTART_CFG_BIT_MSK	0x7
++
++#define SPM_P1_SLEEP_REG_OFFSET	0x1
++
++#define SPM_P1_ADC_AUTO_REG		0x22
++#define SPM_P1_ADC_AUTO_BIT_MSK	0x7f
++
++#define SPM_P1_ADC_CTRL_REG		0x1e
++#define SPM_P1_ADC_CTRL_BIT_MSK	0x3
++#define SPM_P1_ADC_CTRL_EN_BIT_OFFSET	0x0
++#define SPM_P1_ADC_CTRL_GO_BIT_OFFSET	0x1
++
++#define SPM_P1_ADC_CFG1_REG		0x20
++
++#define SPM_P1_ADC_CFG1_ADC_CHOP_EN_BIT_OFFSET		0x6
++#define SPM_P1_ADC_CFG1_ADC_CHOP_EN_BIT_MSK		0x40
++
++#define SPM_P1_ADC_CFG1_ADC_CHNNL_SEL_BIT_OFFSET	0x3
++#define SPM_P1_ADC_CFG1_ADC_CHNNL_SEL_BIT_MSK		0x38
++
++#define SPM_P1_ADC_CFG2_REG				0x21
++#define SPM_P1_ADC_CFG2_REF_SEL_BIT_OFFSET		0x0
++#define SPM_P1_ADC_CFG2_REF_SEL_BIT_MSK		0x3
++#define SPM_P1_ADC_CFG2_3V3_REF			0x2
++
++#define SPM_P1_ADC_CFG2_7_DEB_NUM			0x7
++#define SPM_P1_ADC_CFG2_DEB_NUM_BIT_MSK		0x70
++#define SPM_P1_ADC_CFG2_DEB_NUM_BIT_OFFSET		0x4
++
++#define SPM_P1_ADC_EXTERNAL_CHANNEL_OFFSET		2
++
++#define SPM_P1_ADCIN0_RES_H_REG			0x2a
++#define SPM_P1_ADCIN0_RES_L_REG			0x2b
++#define SPM_P1_ADCIN0_REG_L_BIT_MSK			0xf0
++
++#define SPM_P1_E_GPI0_MSK	BIT(0)
++#define SPM_P1_E_GPI1_MSK	BIT(1)
++#define SPM_P1_E_GPI2_MSK	BIT(2)
++#define SPM_P1_E_GPI3_MSK	BIT(3)
++#define SPM_P1_E_GPI4_MSK	BIT(4)
++#define SPM_P1_E_GPI5_MSK	BIT(5)
++
++#define SPM_P1_E_ADC_TEMP_MSK	BIT(0)
++#define SPM_P1_E_ADC_EOC_MSK	BIT(1)
++#define SPM_P1_E_ADC_EOS_MSK	BIT(2)
++#define SPM_P1_E_WDT_TO_MSK	BIT(3)
++#define SPM_P1_E_ALARM_MSK	BIT(4)
++#define SPM_P1_E_TICK_MSK	BIT(5)
++
++#define SPM_P1_E_LDO_OV_MSK	BIT(0)
++#define SPM_P1_E_LDO_UV_MSK	BIT(1)
++#define SPM_P1_E_LDO_SC_MSK	BIT(2)
++#define SPM_P1_E_SW_SC_MSK	BIT(3)
++#define SPM_P1_E_TEMP_WARN_MSK	BIT(4)
++#define SPM_P1_E_TEMP_SEVERE_MSK	BIT(5)
++#define SPM_P1_E_TEMP_CRIT_MSK		BIT(6)
++
++#define SPM_P1_E_BUCK1_OV_MSK	BIT(0)
++#define SPM_P1_E_BUCK2_OV_MSK	BIT(1)
++#define SPM_P1_E_BUCK3_OV_MSK	BIT(2)
++#define SPM_P1_E_BUCK4_OV_MSK	BIT(3)
++#define SPM_P1_E_BUCK5_OV_MSK	BIT(4)
++#define SPM_P1_E_BUCK6_OV_MSK	BIT(5)
++
++#define SPM_P1_E_BUCK1_UV_MSK	BIT(0)
++#define SPM_P1_E_BUCK2_UV_MSK	BIT(1)
++#define SPM_P1_E_BUCK3_UV_MSK	BIT(2)
++#define SPM_P1_E_BUCK4_UV_MSK	BIT(3)
++#define SPM_P1_E_BUCK5_UV_MSK	BIT(4)
++#define SPM_P1_E_BUCK6_UV_MSK	BIT(5)
++
++#define SPM_P1_E_BUCK1_SC_MSK	BIT(0)
++#define SPM_P1_E_BUCK2_SC_MSK	BIT(1)
++#define SPM_P1_E_BUCK3_SC_MSK	BIT(2)
++#define SPM_P1_E_BUCK4_SC_MSK	BIT(3)
++#define SPM_P1_E_BUCK5_SC_MSK	BIT(4)
++#define SPM_P1_E_BUCK6_SC_MSK	BIT(5)
++
++#define SPM_P1_E_PWRON_RINTR_MSK	BIT(0)
++#define SPM_P1_E_PWRON_FINTR_MSK	BIT(1)
++#define SPM_P1_E_PWRON_SINTR_MSK	BIT(2)
++#define SPM_P1_E_PWRON_LINTR_MSK	BIT(3)
++#define SPM_P1_E_PWRON_SDINTR_MSK	BIT(4)
++#define SPM_P1_E_VSYS_OV_MSK		BIT(5)
++
++#define SPM_P1_E_STATUS_REG_BASE	0x91
++#define SPM_P1_E_EN_REG_BASE		0x98
++
++struct spacemit_pmic {
++	struct i2c_client		*i2c;
++	struct regmap_irq_chip_data	*irq_data;
++	struct regmap			*regmap;
++	const struct regmap_config	*regmap_cfg;
++	const struct regmap_irq_chip	*regmap_irq_chip;
++};
++
++#endif /* __SPACEMIT_P1_H__ */
+-- 
+2.51.0
+

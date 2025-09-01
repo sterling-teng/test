@@ -1,0 +1,343 @@
+From 78d3bfb4ae574ed4be7e278a7470173ca6a6256b Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Tue, 20 May 2025 09:04:27 +0800
+Subject: [PATCH 29/43] driver: iio/adc: add spacemit p1 adc driver support
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/27
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/85f7aea27516e3b73527247ce42947b53ce001dd
+
+--------------------------------
+
+There are 6 channal 12bits ADC in Spacemit p1 chip,
+support from 100Hz to 50KHz sample rate.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ drivers/iio/adc/Kconfig           |  10 ++
+ drivers/iio/adc/Makefile          |   1 +
+ drivers/iio/adc/spacemit-p1-adc.c | 278 ++++++++++++++++++++++++++++++
+ 3 files changed, 289 insertions(+)
+ create mode 100644 drivers/iio/adc/spacemit-p1-adc.c
+
+diff --git a/drivers/iio/adc/Kconfig b/drivers/iio/adc/Kconfig
+index d8e74a1cd53a4..43c0bfab199ad 100644
+--- a/drivers/iio/adc/Kconfig
++++ b/drivers/iio/adc/Kconfig
+@@ -1032,6 +1032,16 @@ config SC27XX_ADC
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called sc27xx_adc.
+ 
++config SPACEMIT_P1_ADC
++	tristate "Spacemit P1 ADC driver"
++	depends on MFD_SPACEMIT_P1
++	help
++	  Say yes here to have support for Spacemit p1 power management IC (PMIC)
++	  ADC devices.
++
++	  To compile this driver as a module, choose M here: the module will be
++	  called spacemit-p1-adc.
++
+ config SPEAR_ADC
+ 	tristate "ST SPEAr ADC"
+ 	depends on PLAT_SPEAR || COMPILE_TEST
+diff --git a/drivers/iio/adc/Makefile b/drivers/iio/adc/Makefile
+index f37c847c468a5..5bedd25f91870 100644
+--- a/drivers/iio/adc/Makefile
++++ b/drivers/iio/adc/Makefile
+@@ -94,6 +94,7 @@ obj-$(CONFIG_ROCKCHIP_SARADC) += rockchip_saradc.o
+ obj-$(CONFIG_RICHTEK_RTQ6056) += rtq6056.o
+ obj-$(CONFIG_RZG2L_ADC) += rzg2l_adc.o
+ obj-$(CONFIG_SC27XX_ADC) += sc27xx_adc.o
++obj-$(CONFIG_SPACEMIT_P1_ADC) += spacemit-p1-adc.o
+ obj-$(CONFIG_SPEAR_ADC) += spear_adc.o
+ obj-$(CONFIG_SUN4I_GPADC) += sun4i-gpadc-iio.o
+ obj-$(CONFIG_SUN20I_GPADC) += sun20i-gpadc-iio.o
+diff --git a/drivers/iio/adc/spacemit-p1-adc.c b/drivers/iio/adc/spacemit-p1-adc.c
+new file mode 100644
+index 0000000000000..03ccb6b8dd659
+--- /dev/null
++++ b/drivers/iio/adc/spacemit-p1-adc.c
+@@ -0,0 +1,278 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * adc driver for Spacemit P1
++ *
++ * Copyright (c) 2023, Spacemit Co., Ltd
++ */
++
++#include <linux/of.h>
++#include <linux/errno.h>
++#include <linux/init.h>
++#include <linux/interrupt.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/pm_wakeirq.h>
++#include <linux/iio/iio.h>
++#include <linux/iio/types.h>
++#include <linux/of_device.h>
++#include <linux/iio/driver.h>
++#include <linux/mfd/spacemit_p1.h>
++
++struct spm_p1_adc_info {
++	int irq;
++	struct regmap *regmap;
++	struct mutex lock;
++	struct completion completion;
++};
++
++struct adc_match_data {
++	int nr_desc;
++	const char *name;
++	struct iio_chan_spec *iio_desc;
++};
++
++static struct adc_match_data *match_data;
++
++static struct iio_chan_spec spm_p1_iio_desc[] = {
++	{
++		.indexed = 1,
++		.type = IIO_VOLTAGE,
++		.channel = 0,
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
++	},
++	{
++		.indexed = 1,
++		.type = IIO_VOLTAGE,
++		.channel = 1,
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
++	},
++	{
++		.indexed = 1,
++		.type = IIO_VOLTAGE,
++		.channel = 2,
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
++	},
++	{
++		.indexed = 1,
++		.type = IIO_VOLTAGE,
++		.channel = 3,
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
++	},
++	{
++		.indexed = 1,
++		.type = IIO_VOLTAGE,
++		.channel = 4,
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
++	},
++	{
++		.indexed = 1,
++		.type = IIO_VOLTAGE,
++		.channel = 5,
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
++	},
++};
++
++static struct adc_match_data spm_p1_adc_match_data = {
++	.iio_desc = spm_p1_iio_desc,
++	.nr_desc = ARRAY_SIZE(spm_p1_iio_desc),
++	.name = "spm_p1",
++};
++
++static const struct of_device_id spm_p1_adc_id_table[] = {
++	{ .compatible = "spacemit,p1,adc", .data = (void *)&spm_p1_adc_match_data },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, spm_p1_adc_id_table);
++
++static int spm_p1_adc_raw(struct iio_dev *indio_dev, struct iio_chan_spec const *chan, int *val)
++{
++	unsigned int value;
++	unsigned int adc_val_h, adc_val_l;
++	struct spm_p1_adc_info *info;
++
++	info = iio_priv(indio_dev);
++
++	mutex_lock(&info->lock);
++
++	/* reset the ADC auto register */
++	regmap_update_bits(info->regmap, SPM_P1_ADC_AUTO_REG,
++			SPM_P1_ADC_AUTO_BIT_MSK, 0);
++
++	/* enable the ADC : ADC_CTRL[0] */
++	regmap_update_bits(info->regmap, SPM_P1_ADC_CTRL_REG,
++			SPM_P1_ADC_CTRL_BIT_MSK, (1 << SPM_P1_ADC_CTRL_EN_BIT_OFFSET));
++
++	/* choose the channel of adc : ADC_CFG[1] */
++	regmap_update_bits(info->regmap, SPM_P1_ADC_CFG1_REG,
++			SPM_P1_ADC_CFG1_ADC_CHNNL_SEL_BIT_MSK,
++			(chan->channel + SPM_P1_ADC_EXTERNAL_CHANNEL_OFFSET) <<
++			 SPM_P1_ADC_CFG1_ADC_CHNNL_SEL_BIT_OFFSET);
++
++	/* ADC go */
++	regmap_update_bits(info->regmap, SPM_P1_ADC_CTRL_REG,
++			SPM_P1_ADC_CTRL_BIT_MSK, (1 << SPM_P1_ADC_CTRL_GO_BIT_OFFSET)  |
++						(1 << SPM_P1_ADC_CTRL_EN_BIT_OFFSET));
++
++	/* then wait the completion */
++	wait_for_completion(&info->completion);
++
++	regmap_read(info->regmap, SPM_P1_ADCIN0_RES_H_REG + chan->channel * 2, &adc_val_h);
++	regmap_read(info->regmap, SPM_P1_ADCIN0_RES_L_REG + chan->channel * 2, &adc_val_l);
++
++	regmap_read(info->regmap, SPM_P1_VERSION_ID_REG, &value);
++
++	*val = (adc_val_h << (ffs(SPM_P1_ADCIN0_REG_L_BIT_MSK) - 1)) | (
++			(adc_val_l & SPM_P1_ADCIN0_REG_L_BIT_MSK) >>
++			(ffs(SPM_P1_ADCIN0_REG_L_BIT_MSK) - 1));
++
++	if (value == 0) {
++		/*
++		 * if the version of P1 is A, the data read from the
++		 * register is the inverse of the real data and the
++		 * conversion accuracy of P1 is 12 bits
++		 */
++		*val = 4095 - *val;
++	}
++
++	pr_debug("%s:%d, read channel:%d, val:%u\n", __func__, __LINE__, chan->channel,
++			*val);
++
++	mutex_unlock(&info->lock);
++
++	return IIO_VAL_INT;
++}
++
++static int spm_p1_adc_scale(struct iio_chan_spec const *chan, int *val, int *val2)
++{
++	switch (chan->type) {
++	case IIO_VOLTAGE:
++		*val = 0;
++		/* 3000 % 4095 ~ 0.7326mv */
++		*val2 = 732600;
++		return IIO_VAL_INT_PLUS_MICRO;
++
++	default:
++		return -EINVAL;
++	}
++
++	return -EINVAL;
++}
++
++static int spm_p1_adc_read_raw(struct iio_dev *indio_dev,
++			       struct iio_chan_spec const *chan,
++			       int *val, int *val2, long mask)
++{
++	switch (mask) {
++	case IIO_CHAN_INFO_RAW:
++		return spm_p1_adc_raw(indio_dev, chan, val);
++
++	case IIO_CHAN_INFO_SCALE:
++		return spm_p1_adc_scale(chan, val, val2);
++
++	default:
++		return -EINVAL;
++	}
++
++	return -EINVAL;
++}
++
++static const struct iio_info spm_p1_adc_iio_info = {
++	.read_raw = &spm_p1_adc_read_raw,
++};
++
++static irqreturn_t adc_complete_irq(int irq, void *_adc)
++{
++	struct spm_p1_adc_info *info;
++	struct iio_dev *indio_dev = (struct iio_dev *)_adc;
++
++	info = iio_priv(indio_dev);
++
++	complete(&info->completion);
++
++	return IRQ_HANDLED;
++}
++
++static void spm_p1_adc_init(struct iio_dev *indio_dev)
++{
++	struct spm_p1_adc_info *info = iio_priv(indio_dev);
++
++	/* enable chop */
++	regmap_update_bits(info->regmap, SPM_P1_ADC_CFG1_REG, SPM_P1_ADC_CFG1_ADC_CHOP_EN_BIT_MSK,
++			   1 << SPM_P1_ADC_CFG1_ADC_CHOP_EN_BIT_OFFSET);
++
++	/* set the vref: 3v3 */
++	regmap_update_bits(info->regmap, SPM_P1_ADC_CFG2_REG, SPM_P1_ADC_CFG2_REF_SEL_BIT_MSK,
++			   SPM_P1_ADC_CFG2_3V3_REF << SPM_P1_ADC_CFG2_REF_SEL_BIT_OFFSET);
++	/* set adc deb num: 7 */
++	regmap_update_bits(info->regmap, SPM_P1_ADC_CFG2_REG, SPM_P1_ADC_CFG2_DEB_NUM_BIT_MSK,
++			   SPM_P1_ADC_CFG2_7_DEB_NUM << SPM_P1_ADC_CFG2_DEB_NUM_BIT_OFFSET);
++}
++
++static int spm_p1_adc_probe(struct platform_device *pdev)
++{
++	int ret;
++	struct iio_dev *indio_dev;
++	struct spm_p1_adc_info *info;
++	const struct of_device_id *of_id;
++	struct spacemit_pmic *pmic = dev_get_drvdata(pdev->dev.parent);
++
++	indio_dev = devm_iio_device_alloc(&pdev->dev, sizeof(*info));
++	if (!indio_dev)
++		return -ENOMEM;
++
++	info = iio_priv(indio_dev);
++	info->irq = platform_get_irq(pdev, 0);
++	if (info->irq < 0) {
++		dev_err(&pdev->dev, "get irq failed\n");
++		return info->irq;
++	}
++
++	ret = devm_request_any_context_irq(&pdev->dev, info->irq,
++				adc_complete_irq, IRQF_TRIGGER_NONE | IRQF_ONESHOT,
++				"p1-adc", indio_dev);
++	if (ret < 0) {
++		dev_err(&pdev->dev, "Can't register adc irq: %d\n", ret);
++		return ret;
++	}
++
++	info->regmap = pmic->regmap;
++
++	mutex_init(&info->lock);
++	init_completion(&info->completion);
++
++	of_id = of_match_device(spm_p1_adc_id_table, &pdev->dev);
++	if (!of_id) {
++		dev_err(&pdev->dev, "Unable to match OF ID\n");
++		return -ENODEV;
++	}
++
++	/* adc init */
++	spm_p1_adc_init(indio_dev);
++
++	match_data = (struct adc_match_data *)of_id->data;
++
++	indio_dev->name = pdev->name;
++	indio_dev->channels = match_data->iio_desc;
++	indio_dev->num_channels = match_data->nr_desc;
++	indio_dev->info = &spm_p1_adc_iio_info;
++	indio_dev->modes = INDIO_DIRECT_MODE;
++
++	ret = devm_iio_map_array_register(&pdev->dev, indio_dev, NULL);
++	if (ret < 0)
++		return ret;
++
++	return devm_iio_device_register(&pdev->dev, indio_dev);
++}
++
++static struct platform_driver spm_p1_adc_driver = {
++	.probe = spm_p1_adc_probe,
++	.driver = {
++		.name = "spm-p1-adc",
++		.of_match_table = of_match_ptr(spm_p1_adc_id_table),
++	},
++};
++module_platform_driver(spm_p1_adc_driver);
++
++MODULE_DESCRIPTION("Spacemit p1 adc driver");
++MODULE_LICENSE("GPL");
+-- 
+2.51.0
+

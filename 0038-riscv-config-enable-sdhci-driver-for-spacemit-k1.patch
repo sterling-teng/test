@@ -1,0 +1,38 @@
+From 95d5486beb974f238eb193c1c0e894bdefc90cb7 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Mon, 25 Aug 2025 19:05:09 +0800
+Subject: [PATCH 38/43] riscv: config: enable sdhci driver for spacemit k1
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/114
+
+--------------------------------
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/configs/k1_defconfig | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/riscv/configs/k1_defconfig b/arch/riscv/configs/k1_defconfig
+index 6d6d9caacbc54..89ce4221418f0 100644
+--- a/arch/riscv/configs/k1_defconfig
++++ b/arch/riscv/configs/k1_defconfig
+@@ -18,10 +18,12 @@ CONFIG_I2C_SPACEMIT_K1=y
+ CONFIG_SPI_SPACEMIT_K1=y
+ CONFIG_SPI_SPACEMIT_K1_QSPI=y
+ CONFIG_PWM_PXA=m
+-CONFIG_MFD_SPACEMIT_P1=m
+-CONFIG_REGULATOR_SPACEMIT_P1=m
++CONFIG_MFD_CORE=y
++CONFIG_MFD_SPACEMIT_P1=y
++CONFIG_REGULATOR_SPACEMIT_P1=y
+ CONFIG_INPUT_SPACEMIT_P1_PWRKEY=m
+ CONFIG_PINCTRL_SPACEMIT_P1=m
+ CONFIG_RTC_DRV_SPACEMIT_P1=m
+ CONFIG_SPACEMIT_P1_ADC=m
++CONFIG_MMC_SDHCI_OF_K1=y
+ 
+-- 
+2.51.0
+

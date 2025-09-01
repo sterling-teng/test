@@ -1,0 +1,49 @@
+From fe42af7db5886e45e1a9f6bbbada02588424aa7d Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Wed, 21 May 2025 11:28:53 +0800
+Subject: [PATCH 19/43] riscv: k1: dts: enable qspi for bananapi f3 board
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/53
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/c57a5517737787dcc26af4a868f5559608e57f5f
+
+--------------------------------
+
+There is an spi nor-flash connected to the qspi interface,
+which located beside the mini-pcie interface socket.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts b/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
+index 86613d4a3cbc5..c96b4e5cd6f12 100644
+--- a/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
++++ b/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
+@@ -87,6 +87,21 @@ &spi3 {
+ 	status = "okay";
+ };
+ 
++&qspi {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_qspi>;
++	status = "okay";
++
++	flash@0 {
++		compatible = "jedec,spi-nor";
++		reg = <0>;
++		spi-max-frequency = <26500000>;
++		m25p,fast-read;
++		broken-flash-reset;
++		status = "okay";
++	};
++};
++
+ &i2c2 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&pinctrl_i2c2_0>;
+-- 
+2.51.0
+

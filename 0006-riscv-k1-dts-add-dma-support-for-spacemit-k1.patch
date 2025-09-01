@@ -1,0 +1,60 @@
+From aa755ee4666063c1d58c70cb05c7d3d8dfda117c Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Mon, 19 May 2025 11:10:39 +0800
+Subject: [PATCH 06/43] riscv: k1: dts: add dma support for spacemit k1
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/25
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/8e56c6e0c36c7ba6f66274e73aeb8b2095b42600
+
+--------------------------------
+
+Add dma controller description to devicetree, spacemit k1
+has a 16 channels pdma for memory-to-meory, various device
+to memory, and memory to device.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/boot/dts/spacemit/k1-x.dtsi | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/spacemit/k1-x.dtsi b/arch/riscv/boot/dts/spacemit/k1-x.dtsi
+index c499aee18ef95..05ede81721469 100644
+--- a/arch/riscv/boot/dts/spacemit/k1-x.dtsi
++++ b/arch/riscv/boot/dts/spacemit/k1-x.dtsi
+@@ -5,6 +5,8 @@
+ 
+ #include <dt-bindings/reset/spacemit-k1x-reset.h>
+ #include <dt-bindings/clock/spacemit-k1x-clock.h>
++#include <dt-bindings/dma/spacemit-k1-dma.h>
++
+ / {
+ 	compatible = "spacemit,k1-x";
+ 	#address-cells = <2>;
+@@ -556,6 +558,22 @@ range: gpio-range {
+ 			};
+ 		};
+ 
++		pdma0: pdma@d4000000 {
++			compatible = "spacemit,k1-pdma";
++			reg = <0x0 0xd4000000 0x0 0x4000>;
++			interrupts = <72>;
++			interrupt-parent = <&intc>;
++			clocks = <&ccu CLK_DMA>;
++			resets = <&reset RESET_DMA>;
++			#dma-cells= <2>;
++			#dma-channels = <16>;
++			max-burst-size = <64>;
++			reserved-channels = <15 45>;
++			interconnects = <&dram_range0>;
++			interconnect-names = "dma-mem";
++			status = "ok";
++		};
++
+ 		uart0: serial@d4017000 {
+ 			compatible = "spacemit,k1x-uart";
+ 			reg = <0x0 0xd4017000 0x0 0x100>;
+-- 
+2.51.0
+

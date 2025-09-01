@@ -1,0 +1,65 @@
+From 0cacb577ceb3605a1f1adeb7191c4bb76421633a Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Mon, 19 May 2025 17:02:23 +0800
+Subject: [PATCH 17/43] riscv: k1: dts: add qspi support for spacemit k1
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/53
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/c57a5517737787dcc26af4a868f5559608e57f5f
+
+--------------------------------
+
+add the dedicated qspi controller in spacemit k1 support
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/boot/dts/spacemit/k1-x.dtsi | 32 ++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/spacemit/k1-x.dtsi b/arch/riscv/boot/dts/spacemit/k1-x.dtsi
+index b9fb1751f0bad..64438ce703c25 100644
+--- a/arch/riscv/boot/dts/spacemit/k1-x.dtsi
++++ b/arch/riscv/boot/dts/spacemit/k1-x.dtsi
+@@ -884,6 +884,38 @@ spi3: spi@d401c000 {
+ 			status = "disabled";
+ 		};
+ 
++		qspi: spi@d420c000 {
++			compatible = "spacemit,k1-qspi";
++			#address-cells = <1>;
++			#size-cells = <0>;
++			reg = <0x0 0xd420c000 0x0 0x1000>,
++			      <0x0 0xb8000000 0x0 0xc00000>;
++			reg-names = "qspi-base", "qspi-mmap";
++			k1,qspi-sfa1ad = <0x4000000>;
++			k1,qspi-sfa2ad = <0x100000>;
++			k1,qspi-sfb1ad = <0x100000>;
++			k1,qspi-sfb2ad = <0x100000>;
++			clocks = <&ccu CLK_QSPI>,
++				 <&ccu CLK_QSPI_BUS>;
++			clock-names = "qspi_clk", "qspi_bus_clk";
++			resets = <&reset RESET_QSPI>,
++				 <&reset RESET_QSPI_BUS>;
++			reset-names = "qspi_reset", "qspi_bus_reset";
++			k1,qspi-pmuap-reg = <0xd4282860>;
++			k1,qspi-mpmu-acgr-reg = <0xd4051024>;
++			k1,qspi-freq = <26500000>;
++			k1,qspi-id = <4>;
++			interrupts = <117>;
++			interrupt-parent = <&intc>;
++			k1,qspi-tx-dma = <1>;
++			k1,qspi-rx-dma = <1>;
++			dmas = <&pdma0 DMA_QSPI_TX 1>;
++			dma-names = "tx-dma";
++			interconnects = <&dram_range0>;
++			interconnect-names = "dma-mem";
++			status = "disabled";
++		};
++
+ 		gpio: gpio@d4019000 {
+ 			compatible = "spacemit,k1x-gpio";
+ 			reg = <0x0 0xd4019000 0x0 0x800>;
+-- 
+2.51.0
+

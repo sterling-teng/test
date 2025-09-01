@@ -1,0 +1,111 @@
+From 7d3dd0997dabeda5d88e4d85427c26e96214fe84 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Mon, 19 May 2025 17:51:09 +0800
+Subject: [PATCH 20/43] driver: pwm: update pwm-pxa for support spacemit k1
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/26
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/6cd071472701900fb059c20e119fb25f187b41ea
+
+--------------------------------
+
+Some SoCs need reset control when initiate hardware module,
+such as Spacemit k1 for example, but the pwm-pxa driver
+don't support reset control operation. So, try to get a
+reset control when probe the devices, if the reset is
+defined in dts, the reset will be de-assert when init
+the device, otherwise, the reset will be ignored.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ drivers/pwm/Kconfig   |  2 +-
+ drivers/pwm/pwm-pxa.c | 22 +++++++++++++++++++---
+ 2 files changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/pwm/Kconfig b/drivers/pwm/Kconfig
+index 1aa6ad3947f82..883761576a5be 100644
+--- a/drivers/pwm/Kconfig
++++ b/drivers/pwm/Kconfig
+@@ -456,7 +456,7 @@ config PWM_PCA9685
+ 
+ config PWM_PXA
+ 	tristate "PXA PWM support"
+-	depends on ARCH_PXA || ARCH_MMP || COMPILE_TEST
++	depends on ARCH_PXA || ARCH_MMP || SOC_SPACEMIT || COMPILE_TEST
+ 	depends on HAS_IOMEM
+ 	help
+ 	  Generic PWM framework driver for PXA.
+diff --git a/drivers/pwm/pwm-pxa.c b/drivers/pwm/pwm-pxa.c
+index 1e475ed10180e..2a0b0d75f1bd9 100644
+--- a/drivers/pwm/pwm-pxa.c
++++ b/drivers/pwm/pwm-pxa.c
+@@ -22,6 +22,7 @@
+ #include <linux/slab.h>
+ #include <linux/err.h>
+ #include <linux/clk.h>
++#include <linux/reset.h>
+ #include <linux/io.h>
+ #include <linux/pwm.h>
+ #include <linux/of_device.h>
+@@ -53,6 +54,7 @@ struct pxa_pwm_chip {
+ 	struct device	*dev;
+ 
+ 	struct clk	*clk;
++	struct reset_control	*reset;
+ 	void __iomem	*mmio_base;
+ };
+ 
+@@ -150,6 +152,7 @@ static const struct of_device_id pwm_of_match[] = {
+ 	{ .compatible = "marvell,pxa270-pwm", .data = &pwm_id_table[0]},
+ 	{ .compatible = "marvell,pxa168-pwm", .data = &pwm_id_table[0]},
+ 	{ .compatible = "marvell,pxa910-pwm", .data = &pwm_id_table[0]},
++	{ .compatible = "spacemit,k1-pwm", .data = &pwm_id_table[0]},
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, pwm_of_match);
+@@ -177,6 +180,10 @@ static int pwm_probe(struct platform_device *pdev)
+ 	if (IS_ERR(pc->clk))
+ 		return PTR_ERR(pc->clk);
+ 
++	pc->reset = devm_reset_control_get_optional(&pdev->dev, NULL);
++	if (!IS_ERR(pc->reset))
++		reset_control_deassert(pc->reset);
++
+ 	pc->chip.dev = &pdev->dev;
+ 	pc->chip.ops = &pxa_pwm_ops;
+ 	pc->chip.npwm = (id->driver_data & HAS_SECONDARY_PWM) ? 2 : 1;
+@@ -187,18 +194,27 @@ static int pwm_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	pc->mmio_base = devm_platform_ioremap_resource(pdev, 0);
+-	if (IS_ERR(pc->mmio_base))
+-		return PTR_ERR(pc->mmio_base);
++	if (IS_ERR(pc->mmio_base)) {
++		ret = PTR_ERR(pc->mmio_base);
++		goto err_rst;
++	}
+ 
+ 	ret = devm_pwmchip_add(&pdev->dev, &pc->chip);
+ 	if (ret < 0) {
+ 		dev_err(&pdev->dev, "pwmchip_add() failed: %d\n", ret);
+-		return ret;
++		goto err_rst;
+ 	}
+ 
+ 	return 0;
++
++err_rst:
++	if (!IS_ERR(pc->reset))
++		reset_control_assert(pc->reset);
++
++	return ret;
+ }
+ 
++
+ static struct platform_driver pwm_driver = {
+ 	.driver		= {
+ 		.name	= "pxa25x-pwm",
+-- 
+2.51.0
+

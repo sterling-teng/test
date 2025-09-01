@@ -1,0 +1,30 @@
+From b77d99a9fc230f09f42340a64c54b7e247a1e870 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Tue, 26 Aug 2025 17:21:11 +0800
+Subject: [PATCH 42/43] riscv: config: enable emac driver for spacemit k1
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/120
+
+--------------------------------
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/configs/k1_defconfig | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/riscv/configs/k1_defconfig b/arch/riscv/configs/k1_defconfig
+index 89ce4221418f0..72df9883c25cb 100644
+--- a/arch/riscv/configs/k1_defconfig
++++ b/arch/riscv/configs/k1_defconfig
+@@ -26,4 +26,6 @@ CONFIG_PINCTRL_SPACEMIT_P1=m
+ CONFIG_RTC_DRV_SPACEMIT_P1=m
+ CONFIG_SPACEMIT_P1_ADC=m
+ CONFIG_MMC_SDHCI_OF_K1=y
++CONFIG_NET_VENDOR_SPACEMIT=y
++CONFIG_K1_EMAC=m
+ 
+-- 
+2.51.0
+

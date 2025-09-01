@@ -1,0 +1,40 @@
+From dab1aa8e7b049004c65eeea664b4481afd66f55e Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Wed, 21 May 2025 11:10:15 +0800
+Subject: [PATCH 15/43] riscv: k1: dts: enable spi-3 for bananapi f3 board
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/53
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/c57a5517737787dcc26af4a868f5559608e57f5f
+
+--------------------------------
+
+Spi-3 is available on the bananapi f3, and the pins is located
+at the 26pin gpio interface.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts b/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
+index 8d8771c3b6e97..86613d4a3cbc5 100644
+--- a/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
++++ b/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
+@@ -81,6 +81,12 @@ &uart0 {
+ 	status = "okay";
+ };
+ 
++&spi3 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_ssp3_0>;
++	status = "okay";
++};
++
+ &i2c2 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&pinctrl_i2c2_0>;
+-- 
+2.51.0
+

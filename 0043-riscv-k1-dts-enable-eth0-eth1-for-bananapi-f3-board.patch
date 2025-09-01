@@ -1,0 +1,99 @@
+From b8fbdbaa019a66cf6d41b1a2576b49abb65957e6 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Tue, 26 Aug 2025 17:31:40 +0800
+Subject: [PATCH 43/43] riscv: k1: dts: enable eth0/eth1 for bananapi f3 board
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/120
+
+--------------------------------
+
+The two EMAC controllers are both valid on bananapi f3 board.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ .../boot/dts/spacemit/k1-bananapi-f3.dts      | 70 +++++++++++++++++++
+ 1 file changed, 70 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts b/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
+index 2fc4e4cf52dab..16f7a19f701f0 100644
+--- a/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
++++ b/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
+@@ -376,3 +376,73 @@ &sdhci2 {
+ 	spacemit,sdh-freq = <375000000>;
+ 	status = "okay";
+ };
++
++&eth0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_gmac0>;
++
++	emac,reset-gpio = <&gpio 110 0>;
++	emac,reset-active-low;
++	emac,reset-delays-us = <0 10000 100000>;
++
++	/* store forward mode */
++	tx-threshold = <1518>;
++	rx-threshold = <12>;
++	tx-ring-num = <1024>;
++	rx-ring-num = <1024>;
++	dma-burst-len = <5>;
++
++	ref-clock-from-phy;
++	clk-tuning-enable;
++	clk-tuning-by-delayline;
++	tx-phase = <60>;
++	rx-phase = <73>;
++	phy-handle = <&rgmii0>;
++	status = "okay";
++
++	mdio-bus {
++		#address-cells = <0x1>;
++		#size-cells = <0x0>;
++		rgmii0: phy@0 {
++			compatible = "ethernet-phy-id001c.c916";
++			device_type = "ethernet-phy";
++			reg = <0x1>;
++			phy-mode = "rgmii";
++		};
++	};
++};
++
++&eth1 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_gmac1>;
++
++	emac,reset-gpio = <&gpio 115 0>;
++	emac,reset-active-low;
++	emac,reset-delays-us = <0 10000 100000>;
++
++	/* store forward mode */
++	tx-threshold = <1518>;
++	rx-threshold = <12>;
++	tx-ring-num = <1024>;
++	rx-ring-num = <1024>;
++	dma-burst-len = <5>;
++
++	ref-clock-from-phy;
++	clk-tuning-enable;
++	clk-tuning-by-delayline;
++	tx-phase = <90>;
++	rx-phase = <73>;
++	phy-handle = <&rgmii1>;
++	status = "okay";
++
++	mdio-bus {
++		#address-cells = <0x1>;
++		#size-cells = <0x0>;
++		rgmii1: phy@1 {
++			compatible = "ethernet-phy-id001c.c916";
++			device_type = "ethernet-phy";
++			reg = <0x1>;
++			phy-mode = "rgmii";
++		};
++	};
++};
+-- 
+2.51.0
+

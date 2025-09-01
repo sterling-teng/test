@@ -1,0 +1,130 @@
+From c84da39f214b58b3a14ed3083b21ee01bfbd0f37 Mon Sep 17 00:00:00 2001
+From: gaorui <gao.rui@zte.com.cn>
+Date: Fri, 11 Jul 2025 16:04:38 +0800
+Subject: [PATCH 03/43] riscv: Optimize hweight API with Zbb extension
+
+mainline inclusion
+from mainline-Linux 6.8-rc1
+commit 55ca8d7aa2af3ebdb6f85cccf1b0703d031c1678
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/96
+
+--------------------------------
+
+The Hamming Weight of a number is the total number of bits set in it, so
+the cpop/cpopw instruction from Zbb extension can be used to accelerate
+hweight() API.
+
+Signed-off-by: Xiao Wang <xiao.w.wang@intel.com>
+Reviewed-by: Charlie Jenkins <charlie@rivosinc.com>
+Link: https://lore.kernel.org/r/20231112095244.4015351-1-xiao.w.wang@intel.com
+Signed-off-by: Palmer Dabbelt <palmer@rivosinc.com>
+Signed-off-by: Gao Rui <gao.rui@zte.com.cn>
+---
+ arch/riscv/include/asm/arch_hweight.h | 78 +++++++++++++++++++++++++++
+ arch/riscv/include/asm/bitops.h       |  4 +-
+ 2 files changed, 81 insertions(+), 1 deletion(-)
+ create mode 100644 arch/riscv/include/asm/arch_hweight.h
+
+diff --git a/arch/riscv/include/asm/arch_hweight.h b/arch/riscv/include/asm/arch_hweight.h
+new file mode 100644
+index 0000000000000..85b2c443823e8
+--- /dev/null
++++ b/arch/riscv/include/asm/arch_hweight.h
+@@ -0,0 +1,78 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Based on arch/x86/include/asm/arch_hweight.h
++ */
++
++#ifndef _ASM_RISCV_HWEIGHT_H
++#define _ASM_RISCV_HWEIGHT_H
++
++#include <asm/alternative-macros.h>
++#include <asm/hwcap.h>
++
++#if (BITS_PER_LONG == 64)
++#define CPOPW	"cpopw "
++#elif (BITS_PER_LONG == 32)
++#define CPOPW	"cpop "
++#else
++#error "Unexpected BITS_PER_LONG"
++#endif
++
++static __always_inline unsigned int __arch_hweight32(unsigned int w)
++{
++#ifdef CONFIG_RISCV_ISA_ZBB
++	asm goto(ALTERNATIVE("j %l[legacy]", "nop", 0,
++				      RISCV_ISA_EXT_ZBB, 1)
++			  : : : : legacy);
++
++	asm (".option push\n"
++	     ".option arch,+zbb\n"
++	     CPOPW "%0, %0\n"
++	     ".option pop\n"
++	     : "+r" (w) : :);
++
++	return w;
++
++legacy:
++#endif
++	return __sw_hweight32(w);
++}
++
++static inline unsigned int __arch_hweight16(unsigned int w)
++{
++	return __arch_hweight32(w & 0xffff);
++}
++
++static inline unsigned int __arch_hweight8(unsigned int w)
++{
++	return __arch_hweight32(w & 0xff);
++}
++
++#if BITS_PER_LONG == 64
++static __always_inline unsigned long __arch_hweight64(__u64 w)
++{
++# ifdef CONFIG_RISCV_ISA_ZBB
++	asm goto(ALTERNATIVE("j %l[legacy]", "nop", 0,
++				      RISCV_ISA_EXT_ZBB, 1)
++			  : : : : legacy);
++
++	asm (".option push\n"
++	     ".option arch,+zbb\n"
++	     "cpop %0, %0\n"
++	     ".option pop\n"
++	     : "+r" (w) : :);
++
++	return w;
++
++legacy:
++# endif
++	return __sw_hweight64(w);
++}
++#else /* BITS_PER_LONG == 64 */
++static inline unsigned long __arch_hweight64(__u64 w)
++{
++	return  __arch_hweight32((u32)w) +
++		__arch_hweight32((u32)(w >> 32));
++}
++#endif /* !(BITS_PER_LONG == 64) */
++
++#endif /* _ASM_RISCV_HWEIGHT_H */
+diff --git a/arch/riscv/include/asm/bitops.h b/arch/riscv/include/asm/bitops.h
+index 1f39306d1d739..3cdcc2bbaaf51 100644
+--- a/arch/riscv/include/asm/bitops.h
++++ b/arch/riscv/include/asm/bitops.h
+@@ -271,7 +271,9 @@ static __always_inline int variable_fls(unsigned int x)
+ #include <asm-generic/bitops/fls64.h>
+ #include <asm-generic/bitops/sched.h>
+ 
+-#include <asm-generic/bitops/hweight.h>
++#include <asm/arch_hweight.h>
++
++#include <asm-generic/bitops/const_hweight.h>
+ 
+ #if (BITS_PER_LONG == 64)
+ #define __AMO(op)	"amo" #op ".d"
+-- 
+2.51.0
+

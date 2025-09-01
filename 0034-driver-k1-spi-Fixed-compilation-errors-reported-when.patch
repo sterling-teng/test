@@ -1,0 +1,41 @@
+From 8b9ec562953e63e25cec499d54818fa017d888b0 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Sun, 24 Aug 2025 11:40:22 +0800
+Subject: [PATCH 34/43] driver: k1/spi: Fixed compilation errors reported when
+ enable CONFIG_PM_SLEEP
+
+community inclusion
+category: bugfix
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/108
+
+--------------------------------
+
+The driver of spi controller don't support PM, remove the pm_ops
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ drivers/spi/spi-spacemit-k1.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/drivers/spi/spi-spacemit-k1.c b/drivers/spi/spi-spacemit-k1.c
+index d70e24bd7febf..7c294b1237384 100644
+--- a/drivers/spi/spi-spacemit-k1.c
++++ b/drivers/spi/spi-spacemit-k1.c
+@@ -1255,14 +1255,9 @@ static void k1_spi_shutdown(struct platform_device *pdev)
+ 		dev_err(&pdev->dev, "shutdown failed with %d\n", status);
+ }
+ 
+-static const struct dev_pm_ops k1_spi_pm_ops = {
+-	SET_SYSTEM_SLEEP_PM_OPS(k1_spi_suspend, k1_spi_resume)
+-};
+-
+ static struct platform_driver driver = {
+ 	.driver = {
+ 		.name	= "k1-spi",
+-		.pm	= &k1_spi_pm_ops,
+ 		.of_match_table = k1_spi_dt_ids,
+ 	},
+ 	.probe = k1_spi_probe,
+-- 
+2.51.0
+

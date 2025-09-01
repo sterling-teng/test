@@ -1,0 +1,186 @@
+From f41f8af119c2defdeb88b3d60faf11fe19827fb3 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Mon, 19 May 2025 14:08:11 +0800
+Subject: [PATCH 09/43] riscv: k1: dts: add i2c support for spacemit k1
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/24
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/9431cb8a2679ac200e76a94a8ec1fc42eb027679
+
+--------------------------------
+
+the i2c0-3 is reserved for TEE secure world use, so only
+i2c0/1/2/4/5/6/7/8 is available for linux
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/boot/dts/spacemit/k1-x.dtsi | 152 +++++++++++++++++++++++++
+ 1 file changed, 152 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/spacemit/k1-x.dtsi b/arch/riscv/boot/dts/spacemit/k1-x.dtsi
+index 05ede81721469..6a08c44b171b9 100644
+--- a/arch/riscv/boot/dts/spacemit/k1-x.dtsi
++++ b/arch/riscv/boot/dts/spacemit/k1-x.dtsi
+@@ -675,6 +675,158 @@ uart9: uart@d4017800 {
+ 			status = "disabled";
+ 		};
+ 
++		i2c0: i2c@d4010800 {
++			compatible = "spacemit,k1-i2c";
++			spacemit,adapter-id = <0>;
++			reg = <0x0 0xd4010800 0x0 0x38>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupt-parent = <&intc>;
++			interrupts = <36>;
++			clocks = <&ccu CLK_TWSI0>;
++			resets = <&reset RESET_TWSI0>;
++			spacemit,i2c-master-code = /bits/ 8 <0x0e>;
++			spacemit,i2c-clk-rate = <32000000>;
++			spacemit,i2c-lcr = <0x82c469f>;
++			spacemit,i2c-wcr = <0x142a>;
++			/* apb clock: 26MHz or 52MHz */
++			spacemit,apb_clock = <52000000>;
++			status = "disabled";
++		};
++
++		i2c1: i2c@d4011000 {
++			compatible = "spacemit,k1-i2c";
++			spacemit,adapter-id = <1>;
++			reg = <0x0 0xd4011000 0x0 0x38>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupt-parent = <&intc>;
++			interrupts = <37>;
++			clocks = <&ccu CLK_TWSI1>;
++			resets = <&reset RESET_TWSI1>;
++			spacemit,i2c-master-code = /bits/ 8 <0x0e>;
++			spacemit,i2c-clk-rate = <32000000>;
++			spacemit,i2c-lcr = <0x82c469f>;
++			spacemit,i2c-wcr = <0x142a>;
++			/* apb clock: 26MHz or 52MHz */
++			spacemit,apb_clock = <52000000>;
++			status = "disabled";
++		};
++
++		i2c2: i2c@d4012000 {
++			compatible = "spacemit,k1-i2c";
++			spacemit,adapter-id = <2>;
++			reg = <0x0 0xd4012000 0x0 0x38>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupt-parent = <&intc>;
++			interrupts = <38>;
++			clocks = <&ccu CLK_TWSI2>;
++			resets = <&reset RESET_TWSI2>;
++			spacemit,i2c-master-code = /bits/ 8 <0x0e>;
++			spacemit,i2c-clk-rate = <32000000>;
++			spacemit,i2c-lcr = <0x82c469f>;
++			spacemit,i2c-wcr = <0x142a>;
++			/* apb clock: 26MHz or 52MHz */
++			spacemit,apb_clock = <52000000>;
++			status = "disabled";
++		};
++
++		i2c4: i2c@d4012800 {
++			compatible = "spacemit,k1-i2c";
++			spacemit,adapter-id = <4>;
++			reg = <0x0 0xd4012800 0x0 0x38>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupt-parent = <&intc>;
++			interrupts = <40>;
++			clocks = <&ccu CLK_TWSI4>;
++			resets = <&reset RESET_TWSI4>;
++			spacemit,i2c-master-code = /bits/ 8 <0x0e>;
++			spacemit,i2c-clk-rate = <32000000>;
++			spacemit,i2c-lcr = <0x82c469f>;
++			spacemit,i2c-wcr = <0x142a>;
++			/* apb clock: 26MHz or 52MHz */
++			spacemit,apb_clock = <52000000>;
++			status = "disabled";
++		};
++
++		i2c5: i2c@d4013800 {
++			compatible = "spacemit,k1-i2c";
++			spacemit,adapter-id = <5>;
++			reg = <0x0 0xd4013800 0x0 0x38>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupt-parent = <&intc>;
++			interrupts = <41>;
++			clocks = <&ccu CLK_TWSI5>;
++			resets = <&reset RESET_TWSI5>;
++			spacemit,i2c-master-code = /bits/ 8 <0x0e>;
++			spacemit,i2c-clk-rate = <32000000>;
++			spacemit,i2c-lcr = <0x82c469f>;
++			spacemit,i2c-wcr = <0x142a>;
++			/* apb clock: 26MHz or 52MHz */
++			spacemit,apb_clock = <52000000>;
++			status = "disabled";
++		};
++
++		i2c6: i2c@d4018800 {
++			compatible = "spacemit,k1-i2c";
++			spacemit,adapter-id = <6>;
++			reg = <0x0 0xd4018800 0x0 0x38>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupt-parent = <&intc>;
++			interrupts = <70>;
++			clocks = <&ccu CLK_TWSI6>;
++			resets = <&reset RESET_TWSI6>;
++			spacemit,i2c-master-code = /bits/ 8 <0x0e>;
++			spacemit,i2c-clk-rate = <32000000>;
++			spacemit,i2c-lcr = <0x82c469f>;
++			spacemit,i2c-wcr = <0x142a>;
++			/* apb clock: 26MHz or 52MHz */
++			spacemit,apb_clock = <52000000>;
++			status = "disabled";
++		};
++
++		i2c7: i2c@d401d000 {
++			compatible = "spacemit,k1-i2c";
++			spacemit,adapter-id = <7>;
++			reg = <0x0 0xd401d000 0x0 0x38>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupt-parent = <&intc>;
++			interrupts = <18>;
++			clocks = <&ccu CLK_TWSI7>;
++			resets = <&reset RESET_TWSI7>;
++			spacemit,i2c-master-code = /bits/ 8 <0x0e>;
++			spacemit,i2c-clk-rate = <32000000>;
++			spacemit,i2c-lcr = <0x82c469f>;
++			spacemit,i2c-wcr = <0x142a>;
++			/* apb clock: 26MHz or 52MHz */
++			spacemit,apb_clock = <52000000>;
++			status = "disabled";
++		};
++
++		i2c8: i2c@d401d800 {
++			compatible = "spacemit,k1-i2c";
++			spacemit,adapter-id = <8>;
++			reg = <0x0 0xd401d800 0x0 0x38>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++			interrupt-parent = <&intc>;
++			interrupts = <19>;
++			clocks = <&ccu CLK_TWSI8>;
++			resets = <&reset RESET_TWSI8>;
++			spacemit,i2c-master-code = /bits/ 8 <0x0e>;
++			spacemit,i2c-clk-rate = <32000000>;
++			spacemit,i2c-lcr = <0x82c469f>;
++			spacemit,i2c-wcr = <0x142a>;
++			/* apb clock: 26MHz or 52MHz */
++			spacemit,apb_clock = <52000000>;
++			status = "disabled";
++		};
++
+ 		gpio: gpio@d4019000 {
+ 			compatible = "spacemit,k1x-gpio";
+ 			reg = <0x0 0xd4019000 0x0 0x800>;
+-- 
+2.51.0
+

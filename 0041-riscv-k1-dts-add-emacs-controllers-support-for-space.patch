@@ -1,0 +1,81 @@
+From 71a65733d0958d895468bdf3283a614dd2d904a9 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Tue, 26 Aug 2025 17:15:44 +0800
+Subject: [PATCH 41/43] riscv: k1: dts: add emacs controllers support for
+ spacemit k1
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/120
+
+--------------------------------
+
+There are two EMACs on Spacemit K1, and their functionality
+is completely identical.
+The MAC address is invalid, should be updated by uboot.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/boot/dts/spacemit/k1-x.dtsi | 40 ++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/spacemit/k1-x.dtsi b/arch/riscv/boot/dts/spacemit/k1-x.dtsi
+index 43f41bb424034..3c7e2ad81529d 100644
+--- a/arch/riscv/boot/dts/spacemit/k1-x.dtsi
++++ b/arch/riscv/boot/dts/spacemit/k1-x.dtsi
+@@ -26,6 +26,8 @@ aliases {
+ 		mmc0 = &sdhci0;
+ 		mmc1 = &sdhci1;
+ 		mmc2 = &sdhci2;
++		ethernet0 = &eth0;
++		ethernet1 = &eth1;
+ 	};
+ 
+ 	cpus: cpus {
+@@ -1177,5 +1179,43 @@ sdhci2: sdh@d4281000 {
+ 			interconnect-names = "dma-mem";
+ 			status = "disabled";
+ 		};
++
++		eth0: ethernet@cac80000 {
++			compatible = "spacemit,k1-emac";
++			reg = <0x0 0xCAC80000 0x0 0x420>;
++			k1,apmu-base-reg = <0xD4282800>;
++			ctrl-reg = <0x3e4>;
++			dline-reg = <0x3e8>;
++			clocks = <&ccu CLK_EMAC0_BUS>, <&ccu CLK_EMAC0_PTP>;
++			clock-names = "emac-clk", "ptp-clk";
++			resets = <&reset RESET_EMAC0>;
++			reset-names = "emac-reset";
++			interrupts-extended = <&intc 131>;
++			mac-address = [ 00 00 00 00 00 00 ];
++			ptp-support;
++			ptp-clk-rate = <10000000>;
++			interconnects = <&dram_range1>;
++			interconnect-names = "dma-mem";
++			status = "disabled";
++		};
++
++		eth1: ethernet@cac81000 {
++			compatible = "spacemit,k1-emac";
++			reg = <0x0 0xCAC81000 0x0 0x420>;
++			k1,apmu-base-reg = <0xD4282800>;
++			ctrl-reg = <0x3ec>;
++			dline-reg = <0x3f0>;
++			clocks = <&ccu CLK_EMAC1_BUS>, <&ccu CLK_EMAC1_PTP>;
++			clock-names = "emac-clk", "ptp-clk";
++			resets = <&reset RESET_EMAC1>;
++			reset-names = "emac-reset";
++			interrupts-extended = <&intc 133>;
++			mac-address = [ 00 00 00 00 00 00 ];
++			ptp-support;
++			ptp-clk-rate = <10000000>;
++			interconnects = <&dram_range1>;
++			interconnect-names = "dma-mem";
++			status = "disabled";
++		};
+ 	};
+ };
+-- 
+2.51.0
+

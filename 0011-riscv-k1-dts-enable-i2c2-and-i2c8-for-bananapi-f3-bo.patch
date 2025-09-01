@@ -1,0 +1,46 @@
+From e1ea8a5aa8158150d28c6088e2095c01f399b143 Mon Sep 17 00:00:00 2001
+From: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+Date: Wed, 21 May 2025 11:03:33 +0800
+Subject: [PATCH 11/43] riscv: k1: dts: enable i2c2 and i2c8 for bananapi f3
+ board
+
+community inclusion
+category: feature
+bugzilla: https://github.com/RVCK-Project/rvck-olk/issues/24
+Reference: https://gitee.com/bianbu-linux/linux-6.6/commit/9431cb8a2679ac200e76a94a8ec1fc42eb027679
+
+--------------------------------
+
+There are two i2c controller i2c-2 and i2c-8 available on
+bananapi f3. One eeprom and an audio codec are connected to
+the i2c-2 bus, and spacemit p1 is connected to the i2c-8 bus.
+
+Signed-off-by: zhangmeng <zhangmeng.kevin@linux.spacemit.com>
+---
+ arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts b/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
+index 05fb67e4eb23b..8d8771c3b6e97 100644
+--- a/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
++++ b/arch/riscv/boot/dts/spacemit/k1-bananapi-f3.dts
+@@ -80,3 +80,16 @@ &uart0 {
+ 	pinctrl-0 = <&pinctrl_uart0_2>;
+ 	status = "okay";
+ };
++
++&i2c2 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_i2c2_0>;
++	spacemit,i2c-fast-mode;
++	status = "okay";
++};
++
++&i2c8 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_i2c8>;
++	status = "okay";
++};
+-- 
+2.51.0
+
